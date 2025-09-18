@@ -196,3 +196,19 @@ class ConvVAE(nn.Module):
         z = self.reparameterize(mu, logvar)
         xrec = self.decode(z)
         return xrec, mu, logvar
+
+# --------------------------------------------- Loss ---------------------------------------------
+"""
+The loss function used to train a Variational Autoencoder (VAE).
+Combines two losses:
+- Reconstruction loss: how close the output image is to the input.
+- KL divergence loss: how close the latent space distribution is to a standard normal (N(0,1)).
+Uses mean squared error (MSE) for reconstruction, and a closed-form formula for KL divergence.
+VAEs need both losses to balance accurate reconstructions and a well-behaved latent space.
+"""
+def vae_loss(recon_x, x, mu, logvar, beta=1.0):
+    # recon_x and x are in [-1,1] (Tanh). Use MSE reconstruction loss.
+    recon_loss = nn.functional.mse_loss(recon_x, x, reduction='sum')
+    # KL divergence between N(mu,var) and N(0,1)
+    kld = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
+    return recon_loss + beta * kld, recon_loss, kld
