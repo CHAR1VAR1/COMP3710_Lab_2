@@ -9,6 +9,7 @@ Features:
 and a UMAP embedding of the latent vectors.
 """
 
+import argparse
 import os
 import glob
 
@@ -95,21 +96,22 @@ class VAE(nn.Module):
     def __init__(self, latent_dim=2):
         super().__init__()
         self.encoder = nn.Sequential(
-            nn.Conv2d(1, 32, 4, 2, 1),  # -> (32, 64, 64)
+            nn.Conv2d(1, 32, 4, 2, 1),
             nn.ReLU(),
-            nn.Conv2d(32, 64, 4, 2, 1), # -> (64, 32, 32)
+            nn.Conv2d(32, 64, 4, 2, 1),
             nn.ReLU(),
-            nn.Conv2d(64, 128, 4, 2, 1), # -> (128, 16, 16)
+            nn.Conv2d(64, 128, 4, 2, 1),
             nn.ReLU(),
-            nn.Conv2d(128, 256, 4, 2, 1), # -> (256, 8, 8)
+            nn.Conv2d(128, 256, 4, 2, 1),
             nn.ReLU(),
         )
 
-        # dynamically infer flatten size
+        # dynamic flatten size
         with torch.no_grad():
-            dummy = torch.zeros(1, 1, 128, 128)  # match your slice size
+            dummy = torch.zeros(1, 1, 128, 128)
             h = self.encoder(dummy)
-            self.h_dim = h.numel()
+            self.h_dim = h.view(1, -1).size(1)
+            self.last_shape = h.shape[1:]  # (C,H,W)
 
         self.fc_mu = nn.Linear(self.h_dim, latent_dim)
         self.fc_logvar = nn.Linear(self.h_dim, latent_dim)
@@ -123,7 +125,7 @@ class VAE(nn.Module):
             nn.ConvTranspose2d(64, 32, 4, 2, 1),
             nn.ReLU(),
             nn.ConvTranspose2d(32, 1, 4, 2, 1),
-            nn.Sigmoid(),  # output [0,1]
+            nn.Sigmoid(),
         )
 
     """
@@ -134,7 +136,7 @@ class VAE(nn.Module):
     """
     def encode(self, x):
         h = self.encoder(x)
-        h = h.view(h.size(0), -1)
+        h = h.view(h.size(0), -1)  # flatten per sample
         return self.fc_mu(h), self.fc_logvar(h)
 
     """
@@ -156,7 +158,7 @@ class VAE(nn.Module):
     """
     def decode(self, z):
         h = self.fc_decode(z)
-        h = h.view(h.size(0), 256, 8, 8)
+        h = h.view(h.size(0), *self.last_shape)
         return self.decoder(h)
     """
     Defines the full VAE pipeline (encode → sample → decode).
@@ -310,3 +312,30 @@ def train(args):
                 plt.close()
 
     print('Training finished')
+
+# ------------------------------------------- Argparse -------------------------------------------
+def parse_args():
+    p = argparse.ArgumentParser()
+    p.add_argument('--data-dir', type=str, required=True, help='Path to preprocessed OASIS folder (searches recursively)')
+    p.add_argument('--out-dir', type=str, required=True, help='Output directory to save models and images')
+    p.add_argument('--epochs', type=int, default=50)
+    p.add_argument('--batch-size', type=int, default=64)
+    p.add_argument('--workers', type=int, default=4)
+    p.add_argument('--lr', type=float, default=1e-3)
+    p.add_argument('--latent-dim', type=int, default=2)
+    p.add_argument('--img-size', type=int, default=128)
+    p.add_argument('--beta', type=float, default=1.0, help='Beta weight for KL term')
+    p.add_argument('--recon-n', type=int, default=8, help='Number of reconstructions to save')
+    p.add_argument('--manifold-n', type=int, default=16, help='Grid side length for manifold (if latent_dim==2)')
+    p.add_argument('--manifold-range', type=float, default=3.0, help='Range for manifold sampling in latent space')
+    p.add_argument('--log-interval', type=int, default=50)
+    p.add_argument('--save-latents', action='store_true')
+    p.add_argument('--umap', action='store_true')
+    p.add_argument('--preload', action='store_true', help='Preload all slices into memory (faster but uses RAM)')
+    p.add_argument('--no-cuda', action='store_true', help='Force CPU even if CUDA available')
+    return p.parse_args()
+
+
+if __name__ == '__main__':
+    args = parse_args()
+    train(args)
