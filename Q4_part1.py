@@ -24,12 +24,8 @@ from torchvision import transforms
 
 import matplotlib.pyplot as plt
 
-# UMAP for visualising latent space (install umap-learn)
-try:
-    import umap
-    _HAS_UMAP = True
-except Exception:
-    _HAS_UMAP = False
+import umap
+reducer = umap.UMAP(n_components=2)
 
 # ------------------------------------------- Datatset -------------------------------------------
 """
@@ -113,9 +109,9 @@ class VAE(nn.Module):
             self.h_dim = h.view(1, -1).size(1)
             self.last_shape = h.shape[1:]  # (C,H,W)
 
-        self.fc_mu = nn.Linear(self.h_dim, latent_dim)
-        self.fc_logvar = nn.Linear(self.h_dim, latent_dim)
-        self.fc_decode = nn.Linear(latent_dim, self.h_dim)
+        self.fc_mu = nn.Linear(65536, latent_dim)
+        self.fc_logvar = nn.Linear(65536, latent_dim)
+        self.fc_decode = nn.Linear(latent_dim, 65536)
 
         self.decoder = nn.Sequential(
             nn.ConvTranspose2d(256, 128, 4, 2, 1),
@@ -158,7 +154,7 @@ class VAE(nn.Module):
     """
     def decode(self, z):
         h = self.fc_decode(z)
-        h = h.view(h.size(0), *self.last_shape)
+        h = h.view(h.size(0), 256, 16, 16)  # reshape to encoder's output shape
         return self.decoder(h)
     """
     Defines the full VAE pipeline (encode → sample → decode).
@@ -302,7 +298,7 @@ def train(args):
             all_mu = np.concatenate(all_mu, axis=0)
             np.save(os.path.join(args.out_dir, f'latents_epoch_{epoch}.npy'), all_mu)
 
-            if _HAS_UMAP and args.umap:
+            if args.umap:
                 reducer = umap.UMAP(n_components=2)
                 emb = reducer.fit_transform(all_mu)
                 plt.figure(figsize=(6,6))
